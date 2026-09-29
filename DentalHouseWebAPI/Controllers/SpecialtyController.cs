@@ -46,7 +46,6 @@ namespace DentalHouseWebAPI.Controllers
                     totalRecords = serviceResponse.Data.TotalRecords,
                     totalPages = (int)Math.Ceiling((double)serviceResponse.Data.TotalRecords / serviceResponse.Data.PageSize),
                     data = specialtyDtoCollection,
-                    Data = specialtyDtoCollection,
                     Pagination = new
                     {
                         serviceResponse.Data.PageNumber,
