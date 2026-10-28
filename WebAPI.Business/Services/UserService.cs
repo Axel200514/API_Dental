@@ -332,7 +332,6 @@ namespace WebAPI.Business.Services
         {
             try
             {
-
                 var existingIdUser = await _userRepository.GetByIdAsync(id);
                 if (existingIdUser.Data == null || existingIdUser.Data.Id == 0)
                 {
@@ -342,10 +341,8 @@ namespace WebAPI.Business.Services
                         IsSuccess = false,
                         MessageCode = MessageCodes.NotFound,
                         Message = "No existe un usuario asociado al Id proporcionado"
-
                     };
                 }
-
 
                 var existingNameUser = await _userRepository.GetByNameAsync(user.UserName);
                 if (existingNameUser.Data != null && existingNameUser.Data.Id != id)
@@ -354,27 +351,40 @@ namespace WebAPI.Business.Services
                     {
                         Data = null,
                         IsSuccess = false,
-
-
-
                         MessageCode = MessageCodes.Conflict,
-                        Message = "ya existe un usuario con el nombre proporcionado. No se debe duplicar el nombre"
+                        Message = "Ya existe un usuario con el nombre proporcionado. No se debe duplicar el nombre"
                     };
+                }
+
+                if (!string.IsNullOrWhiteSpace(user.PasswordHash))
+                {
+                    string newHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
+                    await _userRepository.UpdatePasswordAsync(id, newHash);
+                }
+
+                if (user.State.HasValue)
+                {
+                    await _userRepository.SetStateAsync(id, user.State.Value);
+                }
+
+                if (user.Roles != null)
+                {
+                    await SyncUserRolesAsync(id, user.Roles);
                 }
 
                 var dataUser = new User()
                 {
                     UserName = user.UserName,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash),
                     Email = user.Email,
-                    IsActive = user.State,
+                    IsActive = user.State ?? existingIdUser.Data.IsActive,
                 };
 
                 var result = await _userRepository.UpdateAsync(id, dataUser);
+                var updatedUser = await _userRepository.GetByIdAsync(id);
 
                 return new ServiceResponse<User>
                 {
-                    Data = result.Data,
+                    Data = updatedUser.Data ?? result.Data,
                     IsSuccess = true,
                     MessageCode = MessageCodes.Success,
                     Message = "Registro actualizado con exito",
@@ -478,6 +488,185 @@ namespace WebAPI.Business.Services
                     Message = "Error inesperado al asignar el rol."
                 }
             };
+        }
+
+        public async Task<ServiceResponse<bool>> ResetPasswordAsync(int userId, string newPassword)
+        {
+            try
+            {
+                var existingUser = await _userRepository.GetByIdAsync(userId);
+                if (existingUser.Data == null || existingUser.Data.Id == 0)
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.NotFound,
+                        Message = "No existe un usuario asociado al Id proporcionado"
+                    };
+                }
+
+                string hash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                var repoResult = await _userRepository.UpdatePasswordAsync(userId, hash);
+
+                if (!repoResult.Data)
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.ErrorDataBase,
+                        Message = repoResult.Message ?? "Error al actualizar la contraseña"
+                    };
+                }
+
+                return new ServiceResponse<bool>
+                {
+                    Data = true,
+                    IsSuccess = true,
+                    MessageCode = MessageCodes.Success,
+                    Message = "Contraseña restablecida exitosamente"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ServiceResponse<bool>
+                {
+                    Data = false,
+                    IsSuccess = false,
+                    MessageCode = MessageCodes.ErrorDataBase,
+                    Message = $"Ocurrió un error inesperado: {ex.Message}"
+                };
+            }
+        }
+
+        public async Task<ServiceResponse<bool>> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
+        {
+            try
+            {
+                var existingUser = await _userRepository.GetByIdAsync(userId);
+                if (existingUser.Data == null || existingUser.Data.Id == 0)
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.NotFound,
+                        Message = "No existe un usuario asociado al Id proporcionado"
+                    };
+                }
+
+                if (string.IsNullOrEmpty(existingUser.Data.PasswordHash) ||
+                    !BCrypt.Net.BCrypt.Verify(currentPassword, existingUser.Data.PasswordHash))
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.ErrorValidation,
+                        Message = "La contraseña actual es incorrecta"
+                    };
+                }
+
+                string hash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                var repoResult = await _userRepository.UpdatePasswordAsync(userId, hash);
+
+                if (!repoResult.Data)
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.ErrorDataBase,
+                        Message = repoResult.Message ?? "Error al actualizar la contraseña"
+                    };
+                }
+
+                return new ServiceResponse<bool>
+                {
+                    Data = true,
+                    IsSuccess = true,
+                    MessageCode = MessageCodes.Success,
+                    Message = "Contraseña cambiada exitosamente"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ServiceResponse<bool>
+                {
+                    Data = false,
+                    IsSuccess = false,
+                    MessageCode = MessageCodes.ErrorDataBase,
+                    Message = $"Ocurrió un error inesperado: {ex.Message}"
+                };
+            }
+        }
+
+        public async Task<ServiceResponse<bool>> SyncUserRolesAsync(int userId, string roles)
+        {
+            try
+            {
+                var existingUser = await _userRepository.GetByIdAsync(userId);
+                if (existingUser.Data == null || existingUser.Data.Id == 0)
+                {
+                    return new ServiceResponse<bool>
+                    {
+                        Data = false,
+                        IsSuccess = false,
+                        MessageCode = MessageCodes.NotFound,
+                        Message = "Usuario no encontrado."
+                    };
+                }
+
+                var rolesFromDb = await _roleRepository.GetAllAsync();
+                var availableRoles = rolesFromDb.Data?.ToList() ?? new List<Role>();
+                var requestedRoles = roles.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var roleIds = new List<int>();
+
+                foreach (var roleItem in requestedRoles)
+                {
+                    if (int.TryParse(roleItem, out int parsedId))
+                    {
+                        var matchedById = availableRoles.FirstOrDefault(r => r.Id == parsedId);
+                        if (matchedById != null) roleIds.Add(matchedById.Id);
+                        else roleIds.Add(parsedId);
+                    }
+                    else
+                    {
+                        var matched = availableRoles.FirstOrDefault(r => string.Equals(r.RoleName, roleItem, StringComparison.OrdinalIgnoreCase));
+                        if (matched != null)
+                        {
+                            roleIds.Add(matched.Id);
+                        }
+                        else
+                        {
+                            var lower = roleItem.ToLowerInvariant();
+                            if (lower.Contains("admin")) roleIds.Add(1);
+                            else if (lower.Contains("recep")) roleIds.Add(2);
+                            else if (lower.Contains("doc")) roleIds.Add(3);
+                        }
+                    }
+                }
+
+                var repoResult = await _userRepository.SyncUserRolesAsync(userId, roleIds.Distinct());
+                return new ServiceResponse<bool>
+                {
+                    Data = repoResult.Data,
+                    IsSuccess = repoResult.Data,
+                    MessageCode = repoResult.Data ? MessageCodes.Success : MessageCodes.ErrorDataBase,
+                    Message = repoResult.Data ? "Roles sincronizados correctamente." : "Error al sincronizar roles."
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ServiceResponse<bool>
+                {
+                    Data = false,
+                    IsSuccess = false,
+                    MessageCode = MessageCodes.ErrorDataBase,
+                    Message = $"Error inesperado al sincronizar roles: {ex.Message}"
+                };
+            }
         }
 
 

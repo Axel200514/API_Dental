@@ -24,5 +24,8 @@ namespace WebAPI.Business.Interfaces
 
         Task<ServiceResponse<User>> SetStateAsync(int userId, bool state);
         Task<ServiceResponse<UserRole>> AssignUserRoleAsync(int userId, int roleId);
+        Task<ServiceResponse<bool>> ResetPasswordAsync(int userId, string newPassword);
+        Task<ServiceResponse<bool>> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
+        Task<ServiceResponse<bool>> SyncUserRolesAsync(int userId, string roles);
     }
 }
