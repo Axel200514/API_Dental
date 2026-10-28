@@ -18,21 +18,17 @@ namespace WebAPI.DataAccess.Interfaces
             string? searchTerm = null,
             bool? isActive = null);
 
-
         Task<RepositoryResponse<User>> GetByIdAsync(int id);
 
         Task<RepositoryResponse<User>> GetByNameAsync(string name);
 
-
         Task<RepositoryResponse<User>> AddAsync(User user);
-
 
         Task<RepositoryResponse<User>> UpdateAsync(int id, User user);
 
         Task<RepositoryResponse<User>> SetStateAsync(int userId, bool state);
         Task<RepositoryResponse<UserRole>> AssignUserRoleAsync(int userId, int roleId);
-
-
-        
+        Task<RepositoryResponse<bool>> UpdatePasswordAsync(int userId, string passwordHash);
+        Task<RepositoryResponse<bool>> SyncUserRolesAsync(int userId, IEnumerable<int> roleIds);
     }
 }

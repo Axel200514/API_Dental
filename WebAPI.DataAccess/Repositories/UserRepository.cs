@@ -157,6 +157,7 @@ namespace WebAPI.DataAccess.Repositories
                     {
                         Id = (int)reader["Id"],
                         UserName = reader["UserName"].ToString()!,
+                        PasswordHash = reader["PasswordHash"]?.ToString(),
                         Email = reader["Email"]?.ToString(),
                         IsActive = (bool)reader["IsActive"],
                         Roles = rolesList
@@ -203,6 +204,7 @@ namespace WebAPI.DataAccess.Repositories
                     {
                         Id = (int)reader["Id"],
                         UserName = reader["UserName"].ToString()!,
+                        PasswordHash = reader["PasswordHash"]?.ToString(),
                         Email = reader["Email"]?.ToString(),
                         IsActive = (bool)reader["IsActive"],
                         Roles = rolesList
@@ -285,12 +287,18 @@ namespace WebAPI.DataAccess.Repositories
                 User? updated = null;
                 if (await reader.ReadAsync())
                 {
+                    var rolesStr = reader["Roles"]?.ToString();
+                    var rolesList = string.IsNullOrWhiteSpace(rolesStr)
+                        ? new List<string>()
+                        : rolesStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
                     updated = new User
                     {
                         Id = (int)reader["Id"],
                         UserName = reader["UserName"].ToString()!,
-                        Email = reader["Email"].ToString(),
-                        IsActive = (bool)reader["IsActive"]
+                        Email = reader["Email"]?.ToString(),
+                        IsActive = (bool)reader["IsActive"],
+                        Roles = rolesList
                     };
                 }
                 reader.Close();
@@ -326,12 +334,18 @@ namespace WebAPI.DataAccess.Repositories
                 User? updated = null;
                 if (await reader.ReadAsync())
                 {
+                    var rolesStr = reader["Roles"]?.ToString();
+                    var rolesList = string.IsNullOrWhiteSpace(rolesStr)
+                        ? new List<string>()
+                        : rolesStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
                     updated = new User
                     {
                         Id = (int)reader["Id"],
                         UserName = reader["UserName"].ToString()!,
-                        Email = reader["Email"].ToString(),
-                        IsActive = (bool)reader["IsActive"]
+                        Email = reader["Email"]?.ToString(),
+                        IsActive = (bool)reader["IsActive"],
+                        Roles = rolesList
                     };
                 }
                 reader.Close();
@@ -371,6 +385,66 @@ namespace WebAPI.DataAccess.Repositories
             catch (Exception ex)
             {
                 response.Data = null!;
+                response.OperationStatusCode = -1;
+                response.Message = ex.Message;
+            }
+            return response;
+        }
+
+        public async Task<RepositoryResponse<bool>> UpdatePasswordAsync(int userId, string passwordHash)
+        {
+            var response = new RepositoryResponse<bool>();
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                var cmd = new SqlCommand("USP_UpdateUserPassword", connection)
+                {
+                    CommandType = CommandType.StoredProcedure
+                };
+                cmd.Parameters.AddWithValue("@UserId", userId);
+                cmd.Parameters.AddWithValue("@PasswordHash", passwordHash);
+                cmd.Parameters.Add("@ReturnValue", SqlDbType.Int).Direction = ParameterDirection.ReturnValue;
+
+                await cmd.ExecuteNonQueryAsync();
+
+                int statusCode = Convert.ToInt32(cmd.Parameters["@ReturnValue"].Value);
+                response.OperationStatusCode = statusCode;
+                response.Data = (statusCode == 0);
+            }
+            catch (Exception ex)
+            {
+                response.Data = false;
+                response.OperationStatusCode = -1;
+                response.Message = ex.Message;
+            }
+            return response;
+        }
+
+        public async Task<RepositoryResponse<bool>> SyncUserRolesAsync(int userId, IEnumerable<int> roleIds)
+        {
+            var response = new RepositoryResponse<bool>();
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                var cmd = new SqlCommand("USP_SyncUserRoles", connection)
+                {
+                    CommandType = CommandType.StoredProcedure
+                };
+                cmd.Parameters.AddWithValue("@UserId", userId);
+                cmd.Parameters.AddWithValue("@RoleIds", string.Join(",", roleIds));
+                cmd.Parameters.Add("@ReturnValue", SqlDbType.Int).Direction = ParameterDirection.ReturnValue;
+
+                await cmd.ExecuteNonQueryAsync();
+
+                int statusCode = Convert.ToInt32(cmd.Parameters["@ReturnValue"].Value);
+                response.OperationStatusCode = statusCode;
+                response.Data = (statusCode == 0);
+            }
+            catch (Exception ex)
+            {
+                response.Data = false;
                 response.OperationStatusCode = -1;
                 response.Message = ex.Message;
             }
