@@ -272,7 +272,8 @@ namespace DentalHouseWebAPI.Controllers
                         Id = serviceResponse.Data!.Id,
                         UserName = serviceResponse.Data!.UserName,
                         Email = serviceResponse.Data!.Email,
-                        State = serviceResponse.Data!.IsActive
+                        State = serviceResponse.Data!.IsActive,
+                        Roles = serviceResponse.Data!.Roles
                     };
 
                     try
@@ -493,6 +494,72 @@ namespace DentalHouseWebAPI.Controllers
                     unSuccessfulResponse.Details = new { info = serviceResponse.Message ?? "Error interno de la aplicación" };
                     return StatusCode(500, unSuccessfulResponse);
             }
+        }
+
+        [HttpPost("{id}/reset-password")]
+        public async Task<IActionResult> ResetPassword(int id, [FromBody] ResetPasswordDto dto)
+        {
+            if (id <= 0)
+            {
+                return BadRequest(new UnsuccessfulResponseDTO
+                {
+                    Code = "400",
+                    Message = "El Id proporcionado debe ser mayor a 0",
+                    Details = new { info = "Error en el formato del valor enviado" }
+                });
+            }
+
+            var serviceResponse = await _userService.ResetPasswordAsync(id, dto.NewPassword);
+
+            if (serviceResponse.IsSuccess)
+            {
+                try
+                {
+                    var (userId, userName, userRole, ipAddress) = HttpContext.GetAuditUserInfo();
+                    await _logService.LogAsync(new CreateSystemLogDto
+                    {
+                        UserId = userId,
+                        UserName = userName ?? "Sistema",
+                        UserRole = userRole,
+                        Action = "RESET_PASSWORD",
+                        Module = "Users",
+                        EntityId = id.ToString(),
+                        Description = $"Contraseña del usuario ID #{id} restablecida por el administrador.",
+                        IpAddress = ipAddress,
+                        IsSuccess = true
+                    });
+                }
+                catch { }
+
+                return Ok(new { message = "Contraseña restablecida correctamente." });
+            }
+
+            var unSuccessfulResponse = new UnsuccessfulResponseDTO();
+            switch (serviceResponse.MessageCode)
+            {
+                case MessageCodes.NotFound:
+                    unSuccessfulResponse.Code = "404";
+                    unSuccessfulResponse.Message = serviceResponse.Message ?? "Usuario no encontrado";
+                    unSuccessfulResponse.Details = new { info = "No se encontró el usuario con el Id proporcionado" };
+                    return NotFound(unSuccessfulResponse);
+
+                default:
+                    unSuccessfulResponse.Code = "500";
+                    unSuccessfulResponse.Message = serviceResponse.Message ?? "Ocurrió un error inesperado";
+                    unSuccessfulResponse.Details = new { info = "Error interno inesperado" };
+                    return StatusCode(500, unSuccessfulResponse);
+            }
+        }
+
+        [HttpPost("{id}/sync-roles")]
+        public async Task<IActionResult> SyncRoles(int id, [FromBody] string roles)
+        {
+            var serviceResponse = await _userService.SyncUserRolesAsync(id, roles);
+            if (serviceResponse.IsSuccess)
+            {
+                return Ok(new { message = "Roles actualizados correctamente." });
+            }
+            return StatusCode(500, new UnsuccessfulResponseDTO { Code = "500", Message = serviceResponse.Message });
         }
 
 
