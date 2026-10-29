@@ -14,11 +14,13 @@ namespace DentalHouseWebAPI.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private readonly IUserService _userService;
         private readonly ISystemLogService _logService;
 
-        public AuthController(IAuthService authService, ISystemLogService logService)
+        public AuthController(IAuthService authService, IUserService userService, ISystemLogService logService)
         {
             _authService = authService;
+            _userService = userService;
             _logService = logService;
         }
 
@@ -287,6 +289,68 @@ namespace DentalHouseWebAPI.Controllers
                 Message = serviceResponse.Message ?? "Error al obtener el perfil de usuario.",
                 Details = new { info = "Error interno" }
             });
+        }
+
+        [HttpPost("change-password")]
+        [Authorize]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            var (userId, userName, userRole, ipAddress) = HttpContext.GetAuditUserInfo();
+            if (userId == null || userId <= 0)
+            {
+                return Unauthorized(new UnsuccessfulResponseDTO
+                {
+                    Code = "401",
+                    Message = "No se pudo identificar al usuario a partir del token proporcionado.",
+                    Details = new { info = "Token inválido o expirado" }
+                });
+            }
+
+            var serviceResponse = await _userService.ChangePasswordAsync(userId.Value, dto.CurrentPassword, dto.NewPassword);
+
+            if (serviceResponse.IsSuccess)
+            {
+                try
+                {
+                    await _logService.LogAsync(new CreateSystemLogDto
+                    {
+                        UserId = userId,
+                        UserName = userName ?? "Usuario",
+                        UserRole = userRole,
+                        Action = "CHANGE_PASSWORD",
+                        Module = "Auth",
+                        EntityId = userId.ToString(),
+                        Description = $"El usuario '{userName}' cambió su contraseña exitosamente.",
+                        IpAddress = ipAddress,
+                        IsSuccess = true
+                    });
+                }
+                catch { }
+
+                return Ok(new { message = "Contraseña actualizada exitosamente." });
+            }
+
+            var unSuccessfulResponse = new UnsuccessfulResponseDTO();
+            switch (serviceResponse.MessageCode)
+            {
+                case MessageCodes.ErrorValidation:
+                    unSuccessfulResponse.Code = "400";
+                    unSuccessfulResponse.Message = serviceResponse.Message ?? "Datos inválidos";
+                    unSuccessfulResponse.Details = new { info = serviceResponse.Message };
+                    return BadRequest(unSuccessfulResponse);
+
+                case MessageCodes.NotFound:
+                    unSuccessfulResponse.Code = "404";
+                    unSuccessfulResponse.Message = serviceResponse.Message ?? "Usuario no encontrado";
+                    unSuccessfulResponse.Details = new { info = "Usuario no encontrado" };
+                    return NotFound(unSuccessfulResponse);
+
+                default:
+                    unSuccessfulResponse.Code = "500";
+                    unSuccessfulResponse.Message = serviceResponse.Message ?? "Ocurrió un error inesperado";
+                    unSuccessfulResponse.Details = new { info = "Error interno" };
+                    return StatusCode(500, unSuccessfulResponse);
+            }
         }
     }
 }
