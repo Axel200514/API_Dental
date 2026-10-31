@@ -349,6 +349,13 @@ namespace WebAPI.DataAccess.Repositories
                     };
                 }
                 reader.Close();
+                await connection.CloseAsync();
+
+                if (updated == null)
+                {
+                    var userUpdated = await GetByIdAsync(userId);
+                    updated = userUpdated.Data;
+                }
 
                 response.Data = updated!;
                 response.OperationStatusCode = Convert.ToInt32(cmd.Parameters["@ReturnValue"].Value);
