@@ -422,7 +422,14 @@ namespace WebAPI.Business.Services
 
             var repoResponse = await _userRepository.SetStateAsync(userId, state);
 
-            if (repoResponse.Data == null)
+            var userResult = repoResponse.Data;
+            if (userResult == null)
+            {
+                var refreshed = await _userRepository.GetByIdAsync(userId);
+                userResult = refreshed.Data;
+            }
+
+            if (userResult == null)
             {
                 response.Data = null;
                 response.IsSuccess = false;
@@ -431,8 +438,7 @@ namespace WebAPI.Business.Services
                 return response;
             }
 
-
-            response.Data = repoResponse.Data;
+            response.Data = userResult;
             response.IsSuccess = true;
             response.MessageCode = MessageCodes.Success;
             response.Message = state ? "Usuario activado" : "Usuario desactivado";
